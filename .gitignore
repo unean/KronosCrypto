@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Local data and runtime artifacts
+*.db
+*.sqlite
+*.sqlite3
+/data/
+/snapshots/
+logs/
+*.log
+
+# Node / frontend
+node_modules/
+dist/
+*.tsbuildinfo
+
+# Environment files
+.env
+.env.*
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
+
+# Hugging Face / model caches
+.cache/
+hf_cache/
+/models/

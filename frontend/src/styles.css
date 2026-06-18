@@ -1,0 +1,284 @@
+:root {
+  color-scheme: dark;
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #0d1117;
+  color: #c9d1d9;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background: #0d1117;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  border: 1px solid #30363d;
+  background: #161b22;
+  color: #f0f6fc;
+  border-radius: 6px;
+  min-height: 38px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: #58a6ff;
+}
+
+button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+button.primary {
+  background: #238636;
+  border-color: #2ea043;
+}
+
+select,
+input {
+  width: 100%;
+  min-height: 38px;
+  border-radius: 6px;
+  border: 1px solid #30363d;
+  background: #0d1117;
+  color: #f0f6fc;
+  padding: 0 10px;
+}
+
+.app-shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+}
+
+.sidebar {
+  border-right: 1px solid #30363d;
+  background: #0b0f14;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 100vh;
+}
+
+.brand {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 2px 14px;
+}
+
+.brand h1 {
+  font-size: 1.1rem;
+  margin: 0;
+  letter-spacing: 0;
+}
+
+.brand span,
+label span,
+.metric span,
+.snapshot-item small,
+.snapshot-item span {
+  color: #8b949e;
+  font-size: 0.78rem;
+}
+
+.panel {
+  border: 1px solid #30363d;
+  background: #111820;
+  border-radius: 8px;
+  padding: 14px;
+}
+
+.controls {
+  display: grid;
+  gap: 12px;
+}
+
+label {
+  display: grid;
+  gap: 6px;
+}
+
+.split {
+  display: grid;
+  grid-template-columns: 1fr 88px;
+  gap: 10px;
+}
+
+.button-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.panel-title h2 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.snapshots {
+  min-height: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.snapshot-list {
+  display: grid;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.snapshot-item {
+  width: 100%;
+  height: auto;
+  min-height: 74px;
+  padding: 10px;
+  align-items: flex-start;
+  justify-content: flex-start;
+  flex-direction: column;
+  text-align: left;
+  gap: 4px;
+}
+
+.snapshot-item strong {
+  font-size: 0.88rem;
+}
+
+.snapshot-item em {
+  color: #ffbf47;
+  font-size: 0.76rem;
+  font-style: normal;
+}
+
+.workspace {
+  min-width: 0;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  min-height: 100vh;
+}
+
+.topbar {
+  border-bottom: 1px solid #30363d;
+  padding: 14px 18px;
+  display: grid;
+  grid-template-columns: minmax(180px, 220px) minmax(260px, 1fr) minmax(180px, auto);
+  gap: 12px;
+  align-items: center;
+  background: #0d1117;
+}
+
+.metric,
+.status-pill,
+.detail-bar,
+.metrics {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.metric {
+  min-width: 0;
+}
+
+.metric strong {
+  color: #f0f6fc;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status-pill {
+  justify-self: end;
+  border: 1px solid #30363d;
+  border-radius: 999px;
+  min-height: 34px;
+  padding: 0 12px;
+  color: #d2a8ff;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chart-wrap {
+  min-height: 0;
+  padding: 14px 18px;
+}
+
+.chart-surface {
+  width: 100%;
+  height: calc(100vh - 128px);
+  min-height: 520px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  overflow: hidden;
+  background: #0d1117;
+}
+
+.detail-bar {
+  border-top: 1px solid #30363d;
+  padding: 12px 18px;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.metrics {
+  color: #8b949e;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 920px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .sidebar {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid #30363d;
+  }
+
+  .topbar {
+    grid-template-columns: 1fr;
+  }
+
+  .status-pill {
+    justify-self: start;
+  }
+
+  .chart-surface {
+    height: 62vh;
+    min-height: 420px;
+  }
+}
+

@@ -59,7 +59,7 @@ class PredictionService:
         sample_count: int,
     ) -> PredictionResult:
         if len(candles) < lookback:
-            raise ValueError(f"Need at least {lookback} closed candles, got {len(candles)}.")
+            raise ValueError(f"至少需要 {lookback} 根已收盘 K 线，当前只有 {len(candles)} 根。")
 
         predictor = self._get_predictor(model_key, device)
         history = candles[-lookback:]

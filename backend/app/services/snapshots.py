@@ -4,7 +4,7 @@ import numpy as np
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.schemas import Candle, SnapshotDetail, SnapshotSummary
+from app.api.schemas import Candle, PredictionProbability, SnapshotDetail, SnapshotSummary
 from app.models.snapshot import PredictionSnapshot, SnapshotCandle
 
 
@@ -21,6 +21,7 @@ class SnapshotService:
         pred_len: int,
         history: list[Candle],
         prediction: list[Candle],
+        sample_paths: list[list[Candle]] | None = None,
     ) -> PredictionSnapshot:
         snapshot = PredictionSnapshot(
             symbol=symbol,
@@ -43,6 +44,9 @@ class SnapshotService:
             db.add(self._to_record(snapshot.id, "history", candle))
         for candle in prediction:
             db.add(self._to_record(snapshot.id, "prediction", candle))
+        for index, sample_path in enumerate(sample_paths or []):
+            for candle in sample_path:
+                db.add(self._to_record(snapshot.id, f"sample_{index}", candle))
 
         db.commit()
         db.refresh(snapshot)
@@ -57,13 +61,31 @@ class SnapshotService:
     def get_snapshot(self, db: Session, snapshot_id: int) -> SnapshotDetail:
         snapshot = db.get(PredictionSnapshot, snapshot_id)
         if not snapshot:
-            raise ValueError("Snapshot not found.")
+            raise ValueError("快照不存在。")
         return self._detail(snapshot)
+
+    def delete_snapshot(self, db: Session, snapshot_id: int) -> None:
+        snapshot = db.get(PredictionSnapshot, snapshot_id)
+        if not snapshot:
+            raise ValueError("快照不存在。")
+        db.delete(snapshot)
+        db.commit()
+
+    def delete_snapshots(self, db: Session, snapshot_ids: list[int]) -> int:
+        unique_ids = sorted(set(snapshot_ids))
+        if not unique_ids:
+            return 0
+
+        snapshots = db.scalars(select(PredictionSnapshot).where(PredictionSnapshot.id.in_(unique_ids))).all()
+        for snapshot in snapshots:
+            db.delete(snapshot)
+        db.commit()
+        return len(snapshots)
 
     def evaluate(self, db: Session, snapshot_id: int, actual: list[Candle]) -> tuple[SnapshotDetail, dict]:
         snapshot = db.get(PredictionSnapshot, snapshot_id)
         if not snapshot:
-            raise ValueError("Snapshot not found.")
+            raise ValueError("快照不存在。")
 
         prediction = [c for c in snapshot.candles if c.kind == "prediction"]
         predicted_by_ts = {c.timestamp: c for c in prediction}
@@ -71,7 +93,7 @@ class SnapshotService:
         common_ts = sorted(set(predicted_by_ts).intersection(actual_by_ts))
 
         if not common_ts:
-            raise ValueError("No overlapping actual candles are available yet.")
+            raise ValueError("还没有可用于评估的重叠实际 K 线。")
 
         for old in [c for c in snapshot.candles if c.kind == "actual"]:
             db.delete(old)
@@ -104,10 +126,14 @@ class SnapshotService:
 
     def _detail(self, snapshot: PredictionSnapshot) -> SnapshotDetail:
         candles = sorted(snapshot.candles, key=lambda c: c.timestamp)
+        history = [self._from_record(c) for c in candles if c.kind == "history"]
+        sample_paths = self._sample_paths(candles)
         return SnapshotDetail(
             **self._summary(snapshot).model_dump(),
-            history=[self._from_record(c) for c in candles if c.kind == "history"],
+            history=history,
             prediction=[self._from_record(c) for c in candles if c.kind == "prediction"],
+            sample_paths=sample_paths,
+            probability=self._probability_summary(history, sample_paths, snapshot.pred_len) if sample_paths else None,
             actual=[self._from_record(c) for c in candles if c.kind == "actual"],
         )
 
@@ -153,8 +179,57 @@ class SnapshotService:
         )
 
     @staticmethod
+    def _sample_paths(candles: list[SnapshotCandle]) -> list[list[Candle]]:
+        sample_indices = sorted(
+            {
+                int(candle.kind.removeprefix("sample_"))
+                for candle in candles
+                if candle.kind.startswith("sample_") and candle.kind.removeprefix("sample_").isdigit()
+            }
+        )
+        return [
+            [SnapshotService._from_record(c) for c in candles if c.kind == f"sample_{index}"]
+            for index in sample_indices
+        ]
+
+    @staticmethod
+    def _probability_summary(
+        history: list[Candle],
+        sample_paths: list[list[Candle]],
+        pred_len: int,
+    ) -> PredictionProbability:
+        last_close = history[-1].close
+        terminal_closes = np.array([path[-1].close for path in sample_paths], dtype=float)
+        terminal_returns = (terminal_closes / max(last_close, 1e-9) - 1.0) * 100
+
+        historical_closes = np.array([c.close for c in history[-max(pred_len + 1, 2) :]], dtype=float)
+        historical_returns = np.diff(historical_closes) / np.maximum(historical_closes[:-1], 1e-9)
+        recent_volatility = float(np.std(historical_returns) * 100) if len(historical_returns) else 0.0
+
+        future_volatilities = []
+        for path in sample_paths:
+            closes = np.array([last_close, *[c.close for c in path]], dtype=float)
+            returns = np.diff(closes) / np.maximum(closes[:-1], 1e-9)
+            future_volatilities.append(float(np.std(returns) * 100) if len(returns) else 0.0)
+        future_volatilities_arr = np.array(future_volatilities, dtype=float)
+
+        return PredictionProbability(
+            sample_count=len(sample_paths),
+            chance_above_last_close=float(np.mean(terminal_closes > last_close) * 100),
+            chance_below_last_close=float(np.mean(terminal_closes < last_close) * 100),
+            chance_future_volatility_above_recent=float(np.mean(future_volatilities_arr > recent_volatility) * 100),
+            expected_return_pct=float(np.mean(terminal_returns)),
+            median_return_pct=float(np.median(terminal_returns)),
+            p10_return_pct=float(np.percentile(terminal_returns, 10)),
+            p90_return_pct=float(np.percentile(terminal_returns, 90)),
+            recent_volatility_pct=recent_volatility,
+            median_future_volatility_pct=float(np.median(future_volatilities_arr)),
+            target_steps=pred_len,
+            target_timestamp=sample_paths[0][-1].timestamp,
+        )
+
+    @staticmethod
     def _naive(value):
         if getattr(value, "tzinfo", None):
             return value.astimezone(timezone.utc).replace(tzinfo=None)
         return value
-

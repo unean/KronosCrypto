@@ -60,5 +60,7 @@ export type SnapshotSummary = {
 export type SnapshotDetail = SnapshotSummary & {
   history: Candle[];
   prediction: Candle[];
+  sample_paths: Candle[][];
+  probability: PredictionProbability | null;
   actual: Candle[];
 };

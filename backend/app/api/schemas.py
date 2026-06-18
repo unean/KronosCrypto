@@ -39,7 +39,7 @@ class PredictRequest(BaseModel):
     device: str = "cpu"
     temperature: float = Field(default=1.0, ge=0.1, le=2.0)
     top_p: float = Field(default=0.9, ge=0.1, le=1.0)
-    sample_count: int = Field(default=8, ge=1, le=20)
+    sample_count: int = Field(default=8, ge=1, le=50)
     save_snapshot: bool = True
 
 
@@ -85,9 +85,15 @@ class SnapshotSummary(BaseModel):
     metrics: dict | None = None
 
 
+class DeleteSnapshotsRequest(BaseModel):
+    ids: list[int] = Field(default_factory=list, min_length=1)
+
+
 class SnapshotDetail(SnapshotSummary):
     history: list[Candle]
     prediction: list[Candle]
+    sample_paths: list[list[Candle]] = []
+    probability: PredictionProbability | None = None
     actual: list[Candle]
 
 

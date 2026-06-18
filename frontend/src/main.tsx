@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, BarChart3, Clock, Database, Play, RefreshCcw, Save, TrendingUp, Zap } from "lucide-react";
+import {
+  Activity,
+  BarChart3,
+  ChevronLeft,
+  ChevronRight,
+  Clock,
+  Database,
+  Play,
+  RefreshCcw,
+  Save,
+  Trash2,
+  TrendingUp,
+  Zap,
+} from "lucide-react";
 
 import { api, type MarketsResponse, type PredictPayload } from "./api/client";
 import { CandleChart } from "./components/CandleChart";
@@ -15,6 +28,8 @@ const REFRESH_OPTIONS = [
   { label: "1 小时", value: 60 * 60 * 1000 },
   { label: "4 小时", value: 4 * 60 * 60 * 1000 },
 ];
+
+const SNAPSHOT_PAGE_SIZE = 8;
 
 function fmt(value: string) {
   return formatApiTime(value);
@@ -51,6 +66,8 @@ function App() {
   const [actual, setActual] = useState<Candle[]>([]);
   const [lastRun, setLastRun] = useState<PredictResponse | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
+  const [snapshotPage, setSnapshotPage] = useState(1);
+  const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<number[]>([]);
   const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotDetail | null>(null);
   const [status, setStatus] = useState("空闲");
   const [loading, setLoading] = useState(false);
@@ -89,17 +106,46 @@ function App() {
   const chartActual = selectedSnapshot?.actual ?? actual;
   const chartHistory = selectedSnapshot?.history ?? history;
   const chartPrediction = selectedSnapshot?.prediction ?? prediction;
-  const chartSamplePaths = selectedSnapshot ? [] : samplePaths;
+  const chartSamplePaths = selectedSnapshot?.sample_paths ?? samplePaths;
   const chartFocusTimestamp = selectedSnapshot?.prediction_start;
+  const activeProbability = selectedSnapshot?.probability ?? probability;
 
   const latestClose = useMemo(() => {
     const last = chartHistory.at(-1);
     return last ? last.close.toLocaleString(undefined, { maximumFractionDigits: 4 }) : "-";
   }, [chartHistory]);
 
+  const snapshotPageCount = Math.max(1, Math.ceil(snapshots.length / SNAPSHOT_PAGE_SIZE));
+  const pagedSnapshots = snapshots.slice((snapshotPage - 1) * SNAPSHOT_PAGE_SIZE, snapshotPage * SNAPSHOT_PAGE_SIZE);
+  const pagedSnapshotIds = pagedSnapshots.map((snapshot) => snapshot.id);
+  const selectedSnapshotIdSet = useMemo(() => new Set(selectedSnapshotIds), [selectedSnapshotIds]);
+  const isPageSelected = pagedSnapshotIds.length > 0 && pagedSnapshotIds.every((id) => selectedSnapshotIdSet.has(id));
+
+  useEffect(() => {
+    setSnapshotPage((page) => Math.min(page, snapshotPageCount));
+  }, [snapshotPageCount]);
+
   async function loadSnapshots() {
     const data = await api.snapshots();
     setSnapshots(data);
+    const availableIds = new Set(data.map((snapshot) => snapshot.id));
+    setSelectedSnapshotIds((ids) => ids.filter((id) => availableIds.has(id)));
+  }
+
+  function toggleSnapshotSelection(id: number) {
+    setSelectedSnapshotIds((ids) => (ids.includes(id) ? ids.filter((item) => item !== id) : [...ids, id]));
+  }
+
+  function togglePageSelection() {
+    setSelectedSnapshotIds((ids) => {
+      const current = new Set(ids);
+      if (pagedSnapshotIds.every((id) => current.has(id))) {
+        pagedSnapshotIds.forEach((id) => current.delete(id));
+      } else {
+        pagedSnapshotIds.forEach((id) => current.add(id));
+      }
+      return [...current];
+    });
   }
 
   async function previewMarket() {
@@ -183,6 +229,57 @@ function App() {
     }
   }
 
+  async function deleteSnapshot(id: number) {
+    if (!window.confirm(`删除快照 #${id}？`)) return;
+
+    setLoading(true);
+    setStatus(`正在删除快照 #${id}`);
+    try {
+      await api.deleteSnapshot(id);
+      setSelectedSnapshotIds((ids) => ids.filter((item) => item !== id));
+      if (selectedSnapshot?.id === id) {
+        setSelectedSnapshot(null);
+        setHistory([]);
+        setPrediction([]);
+        setSamplePaths([]);
+        setProbability(null);
+        setActual([]);
+      }
+      await loadSnapshots();
+      setStatus(`快照 #${id} 已删除`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "删除失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function deleteSelectedSnapshots() {
+    if (!selectedSnapshotIds.length) return;
+    if (!window.confirm(`删除选中的 ${selectedSnapshotIds.length} 个快照？`)) return;
+
+    setLoading(true);
+    setStatus(`正在删除 ${selectedSnapshotIds.length} 个快照`);
+    try {
+      const response = await api.deleteSnapshots(selectedSnapshotIds);
+      if (selectedSnapshot && selectedSnapshotIds.includes(selectedSnapshot.id)) {
+        setSelectedSnapshot(null);
+        setHistory([]);
+        setPrediction([]);
+        setSamplePaths([]);
+        setProbability(null);
+        setActual([]);
+      }
+      setSelectedSnapshotIds([]);
+      await loadSnapshots();
+      setStatus(`已删除 ${response.deleted} 个快照`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "批量删除失败");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   return (
     <main className="app-shell">
       <aside className="sidebar">
@@ -261,7 +358,7 @@ function App() {
 
           <label>
             <span>采样路径数</span>
-            <input min={1} max={20} type="number" value={sampleCount} onChange={(event) => setSampleCount(Number(event.target.value))} />
+            <input min={1} max={50} type="number" value={sampleCount} onChange={(event) => setSampleCount(Number(event.target.value))} />
           </label>
 
           <label>
@@ -292,15 +389,67 @@ function App() {
             <Save size={16} />
             <h2>快照</h2>
           </div>
+          <div className="snapshot-actions">
+            <button type="button" onClick={togglePageSelection} disabled={!pagedSnapshotIds.length || loading}>
+              {isPageSelected ? "取消本页" : "选择本页"}
+            </button>
+            <button type="button" onClick={() => setSelectedSnapshotIds([])} disabled={!selectedSnapshotIds.length || loading}>
+              清空
+            </button>
+            <button type="button" className="danger-action" onClick={deleteSelectedSnapshots} disabled={!selectedSnapshotIds.length || loading}>
+              <Trash2 size={15} />
+              删除 {selectedSnapshotIds.length}
+            </button>
+          </div>
           <div className="snapshot-list">
-            {snapshots.map((snapshot) => (
-              <button key={snapshot.id} className="snapshot-item" type="button" onClick={() => openSnapshot(snapshot.id)}>
-                <strong>#{snapshot.id} {snapshot.symbol}</strong>
-                <span>{snapshot.timeframe} · {snapshotStatusLabel(snapshot.status)}</span>
-                <small>{fmt(snapshot.created_at)}</small>
-                {snapshot.metrics ? <em>平均绝对百分比误差 {snapshot.metrics.mape_close?.toFixed(2)}%</em> : null}
-              </button>
+            {pagedSnapshots.map((snapshot) => (
+              <div key={snapshot.id} className="snapshot-item">
+                <label className="snapshot-check" title={`选择快照 #${snapshot.id}`}>
+                  <input
+                    type="checkbox"
+                    checked={selectedSnapshotIdSet.has(snapshot.id)}
+                    onChange={() => toggleSnapshotSelection(snapshot.id)}
+                    disabled={loading}
+                  />
+                </label>
+                <button className="snapshot-open" type="button" onClick={() => openSnapshot(snapshot.id)}>
+                  <strong>#{snapshot.id} {snapshot.symbol}</strong>
+                  <span>{snapshot.timeframe} · {snapshotStatusLabel(snapshot.status)}</span>
+                  <small>{fmt(snapshot.created_at)}</small>
+                  {snapshot.metrics ? <em>平均绝对百分比误差 {snapshot.metrics.mape_close?.toFixed(2)}%</em> : null}
+                </button>
+                <button
+                  className="icon-button danger"
+                  type="button"
+                  onClick={() => deleteSnapshot(snapshot.id)}
+                  disabled={loading}
+                  title={`删除快照 #${snapshot.id}`}
+                >
+                  <Trash2 size={15} />
+                </button>
+              </div>
             ))}
+          </div>
+          <div className="pagination">
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setSnapshotPage((page) => Math.max(1, page - 1))}
+              disabled={snapshotPage <= 1}
+              title="上一页"
+            >
+              <ChevronLeft size={16} />
+            </button>
+            <span>{snapshotPage} / {snapshotPageCount}</span>
+            <button
+              className="icon-button"
+              type="button"
+              onClick={() => setSnapshotPage((page) => Math.min(snapshotPageCount, page + 1))}
+              disabled={snapshotPage >= snapshotPageCount}
+              title="下一页"
+            >
+              <ChevronRight size={16} />
+            </button>
           </div>
         </section>
       </aside>
@@ -333,36 +482,36 @@ function App() {
           />
         </div>
 
-        {!selectedSnapshot && probability ? (
+        {activeProbability ? (
           <section className="probability-bar">
             <div className="probability-title">
               <TrendingUp size={17} />
-              概率预测 · {probability.sample_count} 条采样路径 · 目标 {fmt(probability.target_timestamp)}
+              概率预测 · {activeProbability.sample_count} 条采样路径 · 目标 {fmt(activeProbability.target_timestamp)}
             </div>
             <div className="probability-grid">
               <div>
                 <span>高于现价</span>
-                <strong>{fmtPct(probability.chance_above_last_close)}</strong>
+                <strong>{fmtPct(activeProbability.chance_above_last_close)}</strong>
               </div>
               <div>
                 <span>低于现价</span>
-                <strong>{fmtPct(probability.chance_below_last_close)}</strong>
+                <strong>{fmtPct(activeProbability.chance_below_last_close)}</strong>
               </div>
               <div>
                 <span>未来波动更高</span>
-                <strong>{fmtPct(probability.chance_future_volatility_above_recent)}</strong>
+                <strong>{fmtPct(activeProbability.chance_future_volatility_above_recent)}</strong>
               </div>
               <div>
                 <span>预期收益</span>
-                <strong>{fmtPct(probability.expected_return_pct)}</strong>
+                <strong>{fmtPct(activeProbability.expected_return_pct)}</strong>
               </div>
               <div>
                 <span>收益区间 P10/P90</span>
-                <strong>{fmtPct(probability.p10_return_pct)} / {fmtPct(probability.p90_return_pct)}</strong>
+                <strong>{fmtPct(activeProbability.p10_return_pct)} / {fmtPct(activeProbability.p90_return_pct)}</strong>
               </div>
               <div>
                 <span>近期/未来波动</span>
-                <strong>{fmtPct(probability.recent_volatility_pct)} / {fmtPct(probability.median_future_volatility_pct)}</strong>
+                <strong>{fmtPct(activeProbability.recent_volatility_pct)} / {fmtPct(activeProbability.median_future_volatility_pct)}</strong>
               </div>
             </div>
           </section>

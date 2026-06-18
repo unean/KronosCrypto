@@ -84,4 +84,4 @@ class MarketDataService:
             return value * 60 * 60 * 1000
         if unit == "d":
             return value * 24 * 60 * 60 * 1000
-        raise ValueError(f"Unsupported timeframe: {timeframe}")
+        raise ValueError(f"不支持的周期：{timeframe}")

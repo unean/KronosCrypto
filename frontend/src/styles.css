@@ -155,7 +155,50 @@ label {
   padding-right: 2px;
 }
 
+.snapshot-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr minmax(86px, auto);
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.snapshot-actions button {
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 0.78rem;
+}
+
+.danger-action {
+  color: #ff7b72;
+}
+
+.danger-action:hover {
+  border-color: #ff7b72;
+}
+
 .snapshot-item {
+  width: 100%;
+  min-height: 74px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 36px;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.snapshot-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.snapshot-check input {
+  width: 16px;
+  min-height: 16px;
+  padding: 0;
+  margin: 0;
+}
+
+.snapshot-open {
   width: 100%;
   height: auto;
   min-height: 74px;
@@ -167,14 +210,42 @@ label {
   gap: 4px;
 }
 
-.snapshot-item strong {
+.snapshot-open strong {
   font-size: 0.88rem;
 }
 
-.snapshot-item em {
+.snapshot-open em {
   color: #ffbf47;
   font-size: 0.76rem;
   font-style: normal;
+}
+
+.icon-button {
+  width: 36px;
+  min-height: 36px;
+  padding: 0;
+}
+
+.icon-button.danger {
+  color: #ff7b72;
+}
+
+.icon-button.danger:hover {
+  border-color: #ff7b72;
+}
+
+.pagination {
+  display: grid;
+  grid-template-columns: 36px 1fr 36px;
+  gap: 8px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.pagination span {
+  color: #8b949e;
+  font-size: 0.8rem;
+  text-align: center;
 }
 
 .workspace {

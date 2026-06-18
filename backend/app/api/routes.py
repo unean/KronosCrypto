@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 import traceback
 
 from app.api.schemas import (
+    DeleteSnapshotsRequest,
     EvaluateResponse,
     OhlcvRequest,
     PredictRequest,
@@ -82,6 +83,7 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
                 pred_len=request.pred_len,
                 history=history,
                 prediction=prediction,
+                sample_paths=result.sample_paths,
             )
             snapshot_id = snapshot.id
 
@@ -108,10 +110,25 @@ def list_snapshots(db: Session = Depends(get_db)):
     return snapshot_service.list_snapshots(db)
 
 
+@router.post("/snapshots/delete")
+def delete_snapshots(request: DeleteSnapshotsRequest, db: Session = Depends(get_db)):
+    deleted = snapshot_service.delete_snapshots(db, request.ids)
+    return {"ok": True, "deleted": deleted}
+
+
 @router.get("/snapshots/{snapshot_id}", response_model=SnapshotDetail)
 def get_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
     try:
         return snapshot_service.get_snapshot(db, snapshot_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.delete("/snapshots/{snapshot_id}")
+def delete_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
+    try:
+        snapshot_service.delete_snapshot(db, snapshot_id)
+        return {"ok": True}
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
@@ -121,7 +138,7 @@ def evaluate_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
     try:
         snapshot = db.get(PredictionSnapshot, snapshot_id)
         if not snapshot:
-            raise ValueError("Snapshot not found.")
+            raise ValueError("快照不存在。")
         market_service = MarketDataService(snapshot.exchange)
         limit = snapshot.pred_len + 10
         actual = market_service.fetch_closed_ohlcv(snapshot.symbol, snapshot.timeframe, limit)

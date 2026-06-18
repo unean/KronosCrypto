@@ -1,3 +1,5 @@
+from datetime import timedelta
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 import traceback
@@ -162,8 +164,13 @@ def evaluate_snapshot(snapshot_id: int, db: Session = Depends(get_db)):
         if not snapshot:
             raise ValueError("快照不存在。")
         market_service = MarketDataService(snapshot.exchange)
-        limit = snapshot.pred_len + 10
-        actual = market_service.fetch_closed_ohlcv(snapshot.symbol, snapshot.timeframe, limit)
+        timeframe_delta = timedelta(milliseconds=MarketDataService._timeframe_to_ms(snapshot.timeframe))
+        actual = market_service.fetch_closed_ohlcv_range(
+            snapshot.symbol,
+            snapshot.timeframe,
+            snapshot.prediction_start,
+            snapshot.prediction_end + timeframe_delta,
+        )
         detail, metrics = snapshot_service.evaluate(db, snapshot_id, actual)
         return EvaluateResponse(snapshot=detail, metrics=metrics)
     except ValueError as exc:

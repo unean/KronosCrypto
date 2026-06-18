@@ -1,5 +1,12 @@
 import { useEffect, useRef } from "react";
-import { CandlestickSeries, createChart, createSeriesMarkers, HistogramSeries, type UTCTimestamp } from "lightweight-charts";
+import {
+  CandlestickSeries,
+  createChart,
+  createSeriesMarkers,
+  HistogramSeries,
+  LineSeries,
+  type UTCTimestamp,
+} from "lightweight-charts";
 
 import type { Candle } from "../types/domain";
 import { formatUnixSecondsLocal, toUnixSeconds } from "../utils/time";
@@ -7,6 +14,7 @@ import { formatUnixSecondsLocal, toUnixSeconds } from "../utils/time";
 type Props = {
   history: Candle[];
   prediction: Candle[];
+  samplePaths?: Candle[][];
   actual?: Candle[];
   focusTimestamp?: string;
 };
@@ -37,13 +45,40 @@ function normalizeSeries<T extends { time: UTCTimestamp }>(items: T[]) {
   return [...byTime.values()].sort((a, b) => Number(a.time) - Number(b.time));
 }
 
-export function CandleChart({ history, prediction, actual = [], focusTimestamp }: Props) {
+function percentile(values: number[], pct: number) {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const index = (sorted.length - 1) * pct;
+  const lower = Math.floor(index);
+  const upper = Math.ceil(index);
+  if (lower === upper) return sorted[lower];
+  return sorted[lower] + (sorted[upper] - sorted[lower]) * (index - lower);
+}
+
+function forecastEnvelope(samplePaths: Candle[][]) {
+  if (!samplePaths.length || !samplePaths[0]?.length) return [];
+
+  return samplePaths[0].map((candle, index) => {
+    const closes = samplePaths.map((path) => path[index]?.close).filter((value): value is number => Number.isFinite(value));
+    return {
+      time: toUnixSeconds(candle.timestamp) as UTCTimestamp,
+      lower: percentile(closes, 0.1),
+      upper: percentile(closes, 0.9),
+    };
+  });
+}
+
+export function CandleChart({ history, prediction, samplePaths = [], actual = [], focusTimestamp }: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
+    const container = containerRef.current;
+    const bandSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    bandSvg.classList.add("forecast-band");
+    container.appendChild(bandSvg);
 
-    const chart = createChart(containerRef.current, {
+    const chart = createChart(container, {
       autoSize: true,
       layout: {
         background: { color: "#0d1117" },
@@ -79,6 +114,23 @@ export function CandleChart({ history, prediction, actual = [], focusTimestamp }
       wickDownColor: "#ef5b5b",
     });
     historySeries.setData(normalizeSeries(history.map(toChartCandle)));
+
+    const envelope = forecastEnvelope(samplePaths);
+    const envelopeUpperScaleSeries = chart.addSeries(LineSeries, {
+      color: "rgba(255, 191, 71, 0)",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    envelopeUpperScaleSeries.setData(normalizeSeries(envelope.map((point) => ({ time: point.time, value: point.upper }))));
+
+    const envelopeLowerScaleSeries = chart.addSeries(LineSeries, {
+      color: "rgba(255, 191, 71, 0)",
+      lineWidth: 1,
+      priceLineVisible: false,
+      lastValueVisible: false,
+    });
+    envelopeLowerScaleSeries.setData(normalizeSeries(envelope.map((point) => ({ time: point.time, value: point.lower }))));
 
     const predictionSeries = chart.addSeries(CandlestickSeries, {
       upColor: "rgba(42, 166, 255, 0.82)",
@@ -128,7 +180,7 @@ export function CandleChart({ history, prediction, actual = [], focusTimestamp }
     volumeSeries.setData(
       normalizeSeries([
         ...history.map((c) => toVolume(c, "rgba(117, 127, 140, 0.32)")),
-        ...prediction.map((c) => toVolume(c, "rgba(42, 166, 255, 0.25)")),
+        ...prediction.map((c) => toVolume(c, "rgba(255, 159, 28, 0.38)")),
       ]),
     );
 
@@ -154,10 +206,70 @@ export function CandleChart({ history, prediction, actual = [], focusTimestamp }
       chart.timeScale().fitContent();
     }
 
-    return () => {
-      chart.remove();
+    const drawForecastBand = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      bandSvg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      bandSvg.setAttribute("width", `${width}`);
+      bandSvg.setAttribute("height", `${height}`);
+      bandSvg.replaceChildren();
+
+      if (envelope.length >= 2) {
+        const upperPoints = envelope
+          .map((point) => {
+            const x = chart.timeScale().timeToCoordinate(point.time);
+            const y = predictionSeries.priceToCoordinate(point.upper);
+            return x === null || y === null ? null : { x: Number(x), y: Number(y) };
+          })
+          .filter((point) => point !== null);
+        const lowerPoints = envelope
+          .map((point) => {
+            const x = chart.timeScale().timeToCoordinate(point.time);
+            const y = predictionSeries.priceToCoordinate(point.lower);
+            return x === null || y === null ? null : { x: Number(x), y: Number(y) };
+          })
+          .filter((point) => point !== null);
+
+        if (upperPoints.length >= 2 && lowerPoints.length >= 2) {
+          const polygon = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+          const points = [...upperPoints, ...lowerPoints.reverse()].map((point) => `${point.x},${point.y}`).join(" ");
+          polygon.setAttribute("points", points);
+          polygon.setAttribute("fill", "rgba(255, 159, 28, 0.22)");
+          polygon.setAttribute("stroke", "rgba(255, 159, 28, 0.28)");
+          polygon.setAttribute("stroke-width", "1");
+          bandSvg.appendChild(polygon);
+        }
+      }
+
+      if (predictionData.length) {
+        const x = chart.timeScale().timeToCoordinate(predictionData[0].time);
+        if (x !== null) {
+          const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+          line.setAttribute("x1", `${x}`);
+          line.setAttribute("x2", `${x}`);
+          line.setAttribute("y1", "0");
+          line.setAttribute("y2", `${height}`);
+          line.setAttribute("stroke", "rgba(255, 99, 71, 0.9)");
+          line.setAttribute("stroke-width", "1.5");
+          line.setAttribute("stroke-dasharray", "6 5");
+          bandSvg.appendChild(line);
+        }
+      }
     };
-  }, [history, prediction, actual, focusTimestamp]);
+
+    const redraw = () => window.requestAnimationFrame(drawForecastBand);
+    const resizeObserver = new ResizeObserver(redraw);
+    resizeObserver.observe(container);
+    chart.timeScale().subscribeVisibleTimeRangeChange(redraw);
+    redraw();
+
+    return () => {
+      resizeObserver.disconnect();
+      chart.timeScale().unsubscribeVisibleTimeRangeChange(redraw);
+      chart.remove();
+      bandSvg.remove();
+    };
+  }, [history, prediction, samplePaths, actual, focusTimestamp]);
 
   return <div className="chart-surface" ref={containerRef} />;
 }

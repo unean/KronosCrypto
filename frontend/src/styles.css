@@ -197,6 +197,7 @@ label {
 .metric,
 .status-pill,
 .detail-bar,
+.probability-title,
 .metrics {
   display: flex;
   align-items: center;
@@ -234,6 +235,7 @@ label {
 }
 
 .chart-surface {
+  position: relative;
   width: 100%;
   height: calc(100vh - 128px);
   min-height: 520px;
@@ -243,12 +245,58 @@ label {
   background: #0d1117;
 }
 
+.forecast-band {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
 .detail-bar {
   border-top: 1px solid #30363d;
   padding: 12px 18px;
   justify-content: space-between;
   gap: 14px;
   flex-wrap: wrap;
+}
+
+.probability-bar {
+  border-top: 1px solid #30363d;
+  padding: 12px 18px;
+  display: grid;
+  gap: 10px;
+  background: #0f141a;
+}
+
+.probability-title {
+  color: #f0f6fc;
+  font-size: 0.9rem;
+}
+
+.probability-grid {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.probability-grid > div {
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  padding: 10px;
+  display: grid;
+  gap: 5px;
+  background: #111820;
+}
+
+.probability-grid span {
+  color: #8b949e;
+  font-size: 0.76rem;
+}
+
+.probability-grid strong {
+  color: #ffbf47;
+  font-size: 1rem;
+  font-weight: 650;
 }
 
 .metrics {
@@ -280,5 +328,8 @@ label {
     height: 62vh;
     min-height: 420px;
   }
-}
 
+  .probability-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

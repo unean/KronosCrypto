@@ -34,13 +34,28 @@ class PredictRequest(BaseModel):
     timeframe: Timeframe = "15m"
     exchange: str = "binance"
     lookback: int = Field(default=400, ge=32, le=2048)
-    pred_len: int = Field(default=96, ge=1, le=240)
+    pred_len: int = Field(default=48, ge=1, le=240)
     model_key: str = "kronos-base"
     device: str = "cpu"
     temperature: float = Field(default=1.0, ge=0.1, le=2.0)
     top_p: float = Field(default=0.9, ge=0.1, le=1.0)
-    sample_count: int = Field(default=1, ge=1, le=5)
+    sample_count: int = Field(default=8, ge=1, le=20)
     save_snapshot: bool = True
+
+
+class PredictionProbability(BaseModel):
+    sample_count: int
+    chance_above_last_close: float
+    chance_below_last_close: float
+    chance_future_volatility_above_recent: float
+    expected_return_pct: float
+    median_return_pct: float
+    p10_return_pct: float
+    p90_return_pct: float
+    recent_volatility_pct: float
+    median_future_volatility_pct: float
+    target_steps: int
+    target_timestamp: datetime
 
 
 class PredictResponse(BaseModel):
@@ -49,6 +64,8 @@ class PredictResponse(BaseModel):
     timeframe: str
     history: list[Candle]
     prediction: list[Candle]
+    sample_paths: list[list[Candle]] = []
+    probability: PredictionProbability | None = None
     input_start: datetime
     input_end: datetime
     prediction_start: datetime

@@ -323,6 +323,10 @@ class Kronos(nn.Module, PyTorchModelHubMixin):
         Returns:
             torch.Tensor: s2 logits. Shape: [batch_size, seq_len, s2_vocab_size]
         """
+        if s1_ids.size(1) != context.size(1):
+            s1_ids = s1_ids[:, -1:]
+            padding_mask = None
+
         sibling_embed = self.embedding.emb_s1(s1_ids)
         x2 = self.dep_layer(context, sibling_embed, key_padding_mask=padding_mask)
         return self.head.cond_forward(x2)
@@ -659,4 +663,3 @@ class KronosPredictor:
             pred_dfs.append(pred_df)
 
         return pred_dfs
-

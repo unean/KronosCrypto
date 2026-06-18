@@ -1,10 +1,10 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Activity, BarChart3, Clock, Database, Play, RefreshCcw, Save, Zap } from "lucide-react";
+import { Activity, BarChart3, Clock, Database, Play, RefreshCcw, Save, TrendingUp, Zap } from "lucide-react";
 
 import { api, type MarketsResponse, type PredictPayload } from "./api/client";
 import { CandleChart } from "./components/CandleChart";
-import type { Candle, PredictResponse, SnapshotDetail, SnapshotSummary, Timeframe } from "./types/domain";
+import type { Candle, PredictionProbability, PredictResponse, SnapshotDetail, SnapshotSummary, Timeframe } from "./types/domain";
 import { formatApiTime } from "./utils/time";
 import "./styles.css";
 
@@ -29,6 +29,10 @@ function snapshotStatusLabel(status: string) {
   return labels[status] ?? status;
 }
 
+function fmtPct(value: number | undefined) {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : "-";
+}
+
 function App() {
   const [meta, setMeta] = useState<MarketsResponse | null>(null);
   const [exchange, setExchange] = useState("binance");
@@ -37,10 +41,13 @@ function App() {
   const [modelKey, setModelKey] = useState("kronos-base");
   const [device, setDevice] = useState("cpu");
   const [lookback, setLookback] = useState(400);
-  const [predLen, setPredLen] = useState(96);
+  const [predLen, setPredLen] = useState(48);
+  const [sampleCount, setSampleCount] = useState(8);
   const [refreshMs, setRefreshMs] = useState(0);
   const [history, setHistory] = useState<Candle[]>([]);
   const [prediction, setPrediction] = useState<Candle[]>([]);
+  const [samplePaths, setSamplePaths] = useState<Candle[][]>([]);
+  const [probability, setProbability] = useState<PredictionProbability | null>(null);
   const [actual, setActual] = useState<Candle[]>([]);
   const [lastRun, setLastRun] = useState<PredictResponse | null>(null);
   const [snapshots, setSnapshots] = useState<SnapshotSummary[]>([]);
@@ -77,11 +84,12 @@ function App() {
     return () => {
       if (timerRef.current) window.clearInterval(timerRef.current);
     };
-  }, [refreshMs, exchange, symbol, timeframe, lookback, predLen, modelKey, device]);
+  }, [refreshMs, exchange, symbol, timeframe, lookback, predLen, sampleCount, modelKey, device]);
 
   const chartActual = selectedSnapshot?.actual ?? actual;
   const chartHistory = selectedSnapshot?.history ?? history;
   const chartPrediction = selectedSnapshot?.prediction ?? prediction;
+  const chartSamplePaths = selectedSnapshot ? [] : samplePaths;
   const chartFocusTimestamp = selectedSnapshot?.prediction_start;
 
   const latestClose = useMemo(() => {
@@ -102,6 +110,8 @@ function App() {
       setSelectedSnapshot(null);
       setHistory(response.candles);
       setPrediction([]);
+      setSamplePaths([]);
+      setProbability(null);
       setActual([]);
       setStatus(`已加载 ${response.candles.length} 根已收盘 K 线`);
     } catch (error) {
@@ -125,13 +135,15 @@ function App() {
         device,
         temperature: 1,
         top_p: 0.9,
-        sample_count: 1,
+        sample_count: sampleCount,
         save_snapshot: true,
       };
       const response = await api.predict(payload);
       setSelectedSnapshot(null);
       setHistory(response.history);
       setPrediction(response.prediction);
+      setSamplePaths(response.sample_paths ?? []);
+      setProbability(response.probability);
       setActual([]);
       setLastRun(response);
       setStatus(`预测已保存为快照 #${response.snapshot_id}`);
@@ -248,6 +260,11 @@ function App() {
           </div>
 
           <label>
+            <span>采样路径数</span>
+            <input min={1} max={20} type="number" value={sampleCount} onChange={(event) => setSampleCount(Number(event.target.value))} />
+          </label>
+
+          <label>
             <span>自动刷新</span>
             <select value={refreshMs} onChange={(event) => setRefreshMs(Number(event.target.value))}>
               {REFRESH_OPTIONS.map((option) => (
@@ -307,8 +324,49 @@ function App() {
         </header>
 
         <div className="chart-wrap">
-          <CandleChart history={chartHistory} prediction={chartPrediction} actual={chartActual} focusTimestamp={chartFocusTimestamp} />
+          <CandleChart
+            history={chartHistory}
+            prediction={chartPrediction}
+            samplePaths={chartSamplePaths}
+            actual={chartActual}
+            focusTimestamp={chartFocusTimestamp}
+          />
         </div>
+
+        {!selectedSnapshot && probability ? (
+          <section className="probability-bar">
+            <div className="probability-title">
+              <TrendingUp size={17} />
+              概率预测 · {probability.sample_count} 条采样路径 · 目标 {fmt(probability.target_timestamp)}
+            </div>
+            <div className="probability-grid">
+              <div>
+                <span>高于现价</span>
+                <strong>{fmtPct(probability.chance_above_last_close)}</strong>
+              </div>
+              <div>
+                <span>低于现价</span>
+                <strong>{fmtPct(probability.chance_below_last_close)}</strong>
+              </div>
+              <div>
+                <span>未来波动更高</span>
+                <strong>{fmtPct(probability.chance_future_volatility_above_recent)}</strong>
+              </div>
+              <div>
+                <span>预期收益</span>
+                <strong>{fmtPct(probability.expected_return_pct)}</strong>
+              </div>
+              <div>
+                <span>收益区间 P10/P90</span>
+                <strong>{fmtPct(probability.p10_return_pct)} / {fmtPct(probability.p90_return_pct)}</strong>
+              </div>
+              <div>
+                <span>近期/未来波动</span>
+                <strong>{fmtPct(probability.recent_volatility_pct)} / {fmtPct(probability.median_future_volatility_pct)}</strong>
+              </div>
+            </div>
+          </section>
+        ) : null}
 
         {selectedSnapshot ? (
           <section className="detail-bar">

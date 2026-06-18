@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
+import traceback
 
 from app.api.schemas import (
     EvaluateResponse,
@@ -34,7 +35,7 @@ def markets(exchange: str = "binance"):
         "markets": service.list_markets(),
         "timeframes": ["15m", "1h", "4h", "1d"],
         "models": list(MODEL_CONFIGS.keys()),
-        "default_pred_len": {"15m": 96, "1h": 72, "4h": 42, "1d": 30},
+        "default_pred_len": {"15m": 48, "1h": 36, "4h": 21, "1d": 15},
     }
 
 
@@ -55,7 +56,7 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
         market_service = MarketDataService(request.exchange)
         candles = market_service.fetch_closed_ohlcv(request.symbol, request.timeframe, limit)
         history = candles[-request.lookback :]
-        prediction = prediction_service.predict(
+        result = prediction_service.predict(
             candles=candles,
             timeframe=request.timeframe,
             lookback=request.lookback,
@@ -66,6 +67,7 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
             top_p=request.top_p,
             sample_count=request.sample_count,
         )
+        prediction = result.prediction
 
         snapshot_id = None
         if request.save_snapshot:
@@ -89,12 +91,15 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
             timeframe=request.timeframe,
             history=history,
             prediction=prediction,
+            sample_paths=result.sample_paths,
+            probability=result.probability,
             input_start=history[0].timestamp,
             input_end=history[-1].timestamp,
             prediction_start=prediction[0].timestamp,
             prediction_end=prediction[-1].timestamp,
         )
     except Exception as exc:
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
 

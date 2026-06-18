@@ -42,8 +42,67 @@ class MarketDataService:
         closed = [row for row in raw if row[0] + timeframe_ms <= now_ms]
         closed = closed[-limit:]
 
+        return self._rows_to_candles(closed)
+
+    def fetch_closed_ohlcv_range(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_time: datetime,
+        end_time: datetime,
+        max_candles: int = 1500,
+    ) -> list[Candle]:
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=timezone.utc)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=timezone.utc)
+        if start_time >= end_time:
+            raise ValueError("开始时间必须早于结束时间。")
+
+        timeframe_ms = self._timeframe_to_ms(timeframe)
+        start_ms = int(start_time.timestamp() * 1000)
+        since_ms = start_ms
+        end_ms = int(end_time.timestamp() * 1000)
+        now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+        rows: list[list[float]] = []
+
+        while since_ms < end_ms and len(rows) < max_candles:
+            page_limit = min(1000, max_candles - len(rows) + 1)
+            raw = self.exchange.fetch_ohlcv(symbol, timeframe=timeframe, since=since_ms, limit=page_limit)
+            if not raw:
+                break
+
+            advanced = False
+            for row in raw:
+                timestamp_ms = int(row[0])
+                if timestamp_ms < since_ms:
+                    continue
+                advanced = True
+                since_ms = timestamp_ms + timeframe_ms
+                if timestamp_ms >= end_ms:
+                    break
+                if timestamp_ms + timeframe_ms > now_ms:
+                    continue
+                rows.append(row)
+                if len(rows) >= max_candles:
+                    break
+
+            if not advanced:
+                break
+
+        filtered = [
+            row
+            for row in rows
+            if start_ms <= int(row[0]) < end_ms and int(row[0]) + timeframe_ms <= now_ms
+        ]
+        return self._rows_to_candles(filtered[:max_candles])
+
+    def candles_to_frame(self, candles: list[Candle]) -> pd.DataFrame:
+        return pd.DataFrame([c.model_dump() for c in candles])
+
+    def _rows_to_candles(self, rows: list[list[float]]) -> list[Candle]:
         candles: list[Candle] = []
-        for timestamp_ms, open_, high, low, close, volume in closed:
+        for timestamp_ms, open_, high, low, close, volume in rows:
             avg_price = (open_ + high + low + close) / 4
             candles.append(
                 Candle(
@@ -57,9 +116,6 @@ class MarketDataService:
                 )
             )
         return candles
-
-    def candles_to_frame(self, candles: list[Candle]) -> pd.DataFrame:
-        return pd.DataFrame([c.model_dump() for c in candles])
 
     def _filter_okx_unlisted_markets(self) -> None:
         parse_markets = self.exchange.parse_markets

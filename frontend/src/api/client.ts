@@ -51,14 +51,21 @@ export type PredictPayload = {
   top_p: number;
   sample_count: number;
   save_snapshot: boolean;
+  candles?: Candle[];
+};
+
+export type OhlcvOptions = {
+  limit?: number;
+  start_time?: string;
+  end_time?: string;
 };
 
 export const api = {
   markets: () => request<MarketsResponse>("/markets"),
-  ohlcv: (symbol: string, timeframe: Timeframe, exchange: string, limit = 520) =>
+  ohlcv: (symbol: string, timeframe: Timeframe, exchange: string, options: OhlcvOptions = {}) =>
     request<{ candles: Candle[] }>("/ohlcv", {
       method: "POST",
-      body: JSON.stringify({ symbol, timeframe, limit, exchange }),
+      body: JSON.stringify({ symbol, timeframe, exchange, limit: options.limit ?? 520, start_time: options.start_time, end_time: options.end_time }),
     }),
   predict: (payload: PredictPayload) =>
     request<PredictResponse>("/predict", {

@@ -44,8 +44,20 @@ def markets(exchange: str = "binance"):
 def ohlcv(request: OhlcvRequest):
     try:
         service = MarketDataService(request.exchange)
-        candles = service.fetch_closed_ohlcv(request.symbol, request.timeframe, request.limit)
+        if request.start_time or request.end_time:
+            if not request.start_time or not request.end_time:
+                raise ValueError("按时间段拉取时必须同时提供开始时间和结束时间。")
+            candles = service.fetch_closed_ohlcv_range(
+                request.symbol,
+                request.timeframe,
+                request.start_time,
+                request.end_time,
+            )
+        else:
+            candles = service.fetch_closed_ohlcv(request.symbol, request.timeframe, request.limit)
         return {"candles": candles}
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -53,14 +65,22 @@ def ohlcv(request: OhlcvRequest):
 @router.post("/predict", response_model=PredictResponse)
 def predict(request: PredictRequest, db: Session = Depends(get_db)):
     try:
-        limit = max(request.lookback + 5, request.lookback)
-        market_service = MarketDataService(request.exchange)
-        candles = market_service.fetch_closed_ohlcv(request.symbol, request.timeframe, limit)
-        history = candles[-request.lookback :]
+        effective_lookback = request.lookback
+        if request.candles is not None:
+            candles = sorted(request.candles, key=lambda candle: candle.timestamp)
+            effective_lookback = min(request.lookback, len(candles))
+            if effective_lookback < 32:
+                raise ValueError(f"至少需要 32 根已收盘 K 线，当前只有 {len(candles)} 根。")
+        else:
+            limit = max(request.lookback + 5, request.lookback)
+            market_service = MarketDataService(request.exchange)
+            candles = market_service.fetch_closed_ohlcv(request.symbol, request.timeframe, limit)
+
+        history = candles[-effective_lookback :]
         result = prediction_service.predict(
             candles=candles,
             timeframe=request.timeframe,
-            lookback=request.lookback,
+            lookback=effective_lookback,
             pred_len=request.pred_len,
             model_key=request.model_key,
             device=request.device,
@@ -79,7 +99,7 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
                 exchange=request.exchange,
                 model_key=request.model_key,
                 device=request.device,
-                lookback=request.lookback,
+                lookback=effective_lookback,
                 pred_len=request.pred_len,
                 history=history,
                 prediction=prediction,
@@ -100,6 +120,8 @@ def predict(request: PredictRequest, db: Session = Depends(get_db)):
             prediction_start=prediction[0].timestamp,
             prediction_end=prediction[-1].timestamp,
         )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(exc)) from exc

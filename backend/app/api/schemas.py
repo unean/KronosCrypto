@@ -27,6 +27,8 @@ class OhlcvRequest(BaseModel):
     timeframe: Timeframe = "15m"
     limit: int = Field(default=520, ge=10, le=1500)
     exchange: str = "binance"
+    start_time: datetime | None = None
+    end_time: datetime | None = None
 
 
 class PredictRequest(BaseModel):
@@ -41,6 +43,7 @@ class PredictRequest(BaseModel):
     top_p: float = Field(default=0.9, ge=0.1, le=1.0)
     sample_count: int = Field(default=8, ge=1, le=50)
     save_snapshot: bool = True
+    candles: list[Candle] | None = Field(default=None, max_length=2048)
 
 
 class PredictionProbability(BaseModel):

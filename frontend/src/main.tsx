@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import {
   Activity,
   BarChart3,
+  CalendarDays,
   ChevronLeft,
   ChevronRight,
   Clock,
@@ -30,6 +31,11 @@ const REFRESH_OPTIONS = [
 ];
 
 const SNAPSHOT_PAGE_SIZE = 8;
+const RANGE_SHORTCUTS = [
+  { label: "最近1天", days: 1 },
+  { label: "最近3天", days: 3 },
+  { label: "最近7天", days: 7 },
+];
 
 function fmt(value: string) {
   return formatApiTime(value);
@@ -48,7 +54,26 @@ function fmtPct(value: number | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : "-";
 }
 
+function toDateTimeLocal(date: Date) {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
+}
+
+function localInputToIso(value: string) {
+  return value ? new Date(value).toISOString() : undefined;
+}
+
+function defaultRange() {
+  const end = new Date();
+  const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
+  return {
+    start: toDateTimeLocal(start),
+    end: toDateTimeLocal(end),
+  };
+}
+
 function App() {
+  const initialRange = useRef(defaultRange());
   const [meta, setMeta] = useState<MarketsResponse | null>(null);
   const [exchange, setExchange] = useState("binance");
   const [symbol, setSymbol] = useState("ETH/USDT");
@@ -58,6 +83,9 @@ function App() {
   const [lookback, setLookback] = useState(400);
   const [predLen, setPredLen] = useState(48);
   const [sampleCount, setSampleCount] = useState(8);
+  const [rangeStart, setRangeStart] = useState(initialRange.current.start);
+  const [rangeEnd, setRangeEnd] = useState(initialRange.current.end);
+  const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
   const [refreshMs, setRefreshMs] = useState(0);
   const [history, setHistory] = useState<Candle[]>([]);
   const [prediction, setPrediction] = useState<Candle[]>([]);
@@ -109,6 +137,7 @@ function App() {
   const chartSamplePaths = selectedSnapshot?.sample_paths ?? samplePaths;
   const chartFocusTimestamp = selectedSnapshot?.prediction_start;
   const activeProbability = selectedSnapshot?.probability ?? probability;
+  const currentRangeKey = rangeStart && rangeEnd ? `${exchange}|${symbol}|${timeframe}|${rangeStart}|${rangeEnd}` : null;
 
   const latestClose = useMemo(() => {
     const last = chartHistory.at(-1);
@@ -152,19 +181,38 @@ function App() {
     setLoading(true);
     setStatus("正在获取已收盘 K 线");
     try {
-      const response = await api.ohlcv(symbol, timeframe, exchange, 520);
+      const hasRange = Boolean(rangeStart || rangeEnd);
+      const response = await api.ohlcv(symbol, timeframe, exchange, hasRange ? {
+        start_time: localInputToIso(rangeStart),
+        end_time: localInputToIso(rangeEnd),
+      } : { limit: 520 });
       setSelectedSnapshot(null);
       setHistory(response.candles);
       setPrediction([]);
       setSamplePaths([]);
       setProbability(null);
       setActual([]);
+      setLoadedRangeKey(hasRange && rangeStart && rangeEnd ? `${exchange}|${symbol}|${timeframe}|${rangeStart}|${rangeEnd}` : null);
       setStatus(`已加载 ${response.candles.length} 根已收盘 K 线`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "行情数据获取失败");
     } finally {
       setLoading(false);
     }
+  }
+
+  function applyRangeShortcut(days: number) {
+    const end = new Date();
+    const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
+    setRangeStart(toDateTimeLocal(start));
+    setRangeEnd(toDateTimeLocal(end));
+  }
+
+  function shiftRangeByDays(days: number) {
+    if (!rangeStart || !rangeEnd) return;
+    const shiftMs = days * 24 * 60 * 60 * 1000;
+    setRangeStart(toDateTimeLocal(new Date(new Date(rangeStart).getTime() + shiftMs)));
+    setRangeEnd(toDateTimeLocal(new Date(new Date(rangeEnd).getTime() + shiftMs)));
   }
 
   async function runPrediction(showBusy = true) {
@@ -184,6 +232,9 @@ function App() {
         sample_count: sampleCount,
         save_snapshot: true,
       };
+      if (currentRangeKey && loadedRangeKey === currentRangeKey && history.length > 0) {
+        payload.candles = history;
+      }
       const response = await api.predict(payload);
       setSelectedSnapshot(null);
       setHistory(response.history);
@@ -206,6 +257,7 @@ function App() {
     try {
       const snapshot = await api.snapshot(id);
       setSelectedSnapshot(snapshot);
+      setLoadedRangeKey(null);
       setStatus(`已打开快照 #${id}`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "快照加载失败");
@@ -244,6 +296,7 @@ function App() {
         setSamplePaths([]);
         setProbability(null);
         setActual([]);
+        setLoadedRangeKey(null);
       }
       await loadSnapshots();
       setStatus(`快照 #${id} 已删除`);
@@ -269,6 +322,7 @@ function App() {
         setSamplePaths([]);
         setProbability(null);
         setActual([]);
+        setLoadedRangeKey(null);
       }
       setSelectedSnapshotIds([]);
       await loadSnapshots();
@@ -340,6 +394,36 @@ function App() {
             <span>历史 K 线数</span>
             <input min={32} max={2048} type="number" value={lookback} onChange={(event) => setLookback(Number(event.target.value))} />
           </label>
+
+          <div className="range-block">
+            <div className="range-title">
+              <CalendarDays size={15} />
+              <span>拉取时间段</span>
+            </div>
+            <div className="shortcut-row">
+              {RANGE_SHORTCUTS.map((shortcut) => (
+                <button key={shortcut.days} type="button" onClick={() => applyRangeShortcut(shortcut.days)} disabled={loading}>
+                  {shortcut.label}
+                </button>
+              ))}
+              <button type="button" onClick={() => shiftRangeByDays(-1)} disabled={loading || !rangeStart || !rangeEnd}>
+                前一天
+              </button>
+              <button type="button" onClick={() => { setRangeStart(""); setRangeEnd(""); }} disabled={loading || (!rangeStart && !rangeEnd)}>
+                最新
+              </button>
+            </div>
+            <div className="range-inputs">
+              <label>
+                <span>开始</span>
+                <input type="datetime-local" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} />
+              </label>
+              <label>
+                <span>结束</span>
+                <input type="datetime-local" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} />
+              </label>
+            </div>
+          </div>
 
           <div className="split">
             <label>

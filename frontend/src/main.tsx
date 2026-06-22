@@ -54,6 +54,10 @@ function fmtPct(value: number | undefined) {
   return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(1)}%` : "-";
 }
 
+function fmtMetric(value: number | undefined, digits = 2) {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(digits) : "-";
+}
+
 function toDateTimeLocal(date: Date) {
   const offsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
@@ -79,7 +83,7 @@ function App() {
   const [symbol, setSymbol] = useState("ETH/USDT");
   const [timeframe, setTimeframe] = useState<Timeframe>("15m");
   const [modelKey, setModelKey] = useState("kronos-base");
-  const [device, setDevice] = useState("cpu");
+  const [device, setDevice] = useState("mps");
   const [lookback, setLookback] = useState(400);
   const [predLen, setPredLen] = useState(48);
   const [sampleCount, setSampleCount] = useState(8);
@@ -612,10 +616,16 @@ function App() {
             </button>
             {selectedSnapshot.metrics ? (
               <div className="metrics">
-                <span>平均绝对误差 {selectedSnapshot.metrics.mae_close?.toFixed(4)}</span>
-                <span>均方根误差 {selectedSnapshot.metrics.rmse_close?.toFixed(4)}</span>
-                <span>平均绝对百分比误差 {selectedSnapshot.metrics.mape_close?.toFixed(2)}%</span>
-                <span>方向准确率 {selectedSnapshot.metrics.direction_accuracy?.toFixed(1)}%</span>
+                <span>点数 {fmtMetric(selectedSnapshot.metrics.points, 0)} / 覆盖 {fmtMetric(selectedSnapshot.metrics.coverage_pct, 1)}%</span>
+                <span>MAE {fmtMetric(selectedSnapshot.metrics.mae_close)}</span>
+                <span>RMSE {fmtMetric(selectedSnapshot.metrics.rmse_close)}</span>
+                <span>MAPE {fmtMetric(selectedSnapshot.metrics.mape_close)}%</span>
+                <span>最大误差 {fmtMetric(selectedSnapshot.metrics.max_abs_error_close)} / {fmtMetric(selectedSnapshot.metrics.max_abs_error_pct)}%</span>
+                <span>末根误差 {fmtMetric(selectedSnapshot.metrics.last_abs_error_close)} / {fmtMetric(selectedSnapshot.metrics.last_abs_error_pct)}%</span>
+                <span>端点收益 预测 {fmtMetric(selectedSnapshot.metrics.pred_return_pct)}% / 实际 {fmtMetric(selectedSnapshot.metrics.actual_return_pct)}%</span>
+                <span>收益误差 {fmtMetric(selectedSnapshot.metrics.return_error_pct)}%</span>
+                <span>方向准确率 {fmtMetric(selectedSnapshot.metrics.direction_accuracy, 1)}%</span>
+                <span>相关性 {fmtMetric(selectedSnapshot.metrics.close_correlation, 3)}</span>
               </div>
             ) : null}
           </section>

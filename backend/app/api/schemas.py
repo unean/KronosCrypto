@@ -38,7 +38,7 @@ class PredictRequest(BaseModel):
     lookback: int = Field(default=400, ge=32, le=2048)
     pred_len: int = Field(default=48, ge=1, le=240)
     model_key: str = "kronos-base"
-    device: str = "cpu"
+    device: str = "mps"
     temperature: float = Field(default=1.0, ge=0.1, le=2.0)
     top_p: float = Field(default=0.9, ge=0.1, le=1.0)
     sample_count: int = Field(default=8, ge=1, le=50)

@@ -107,13 +107,30 @@ class SnapshotService:
         pred_close = np.array([predicted_by_ts[ts].close for ts in common_ts], dtype=float)
         actual_close = np.array([actual_by_ts[ts].close for ts in common_ts], dtype=float)
         errors = pred_close - actual_close
+        abs_errors = np.abs(errors)
+        abs_pct_errors = abs_errors / np.maximum(actual_close, 1e-9) * 100
         prev_actual = np.array([actual_by_ts[ts].open for ts in common_ts], dtype=float)
+        pred_return_pct = (pred_close[-1] - actual_close[0]) / max(actual_close[0], 1e-9) * 100
+        actual_return_pct = (actual_close[-1] - actual_close[0]) / max(actual_close[0], 1e-9) * 100
+        close_correlation = 0.0
+        if len(common_ts) > 1 and np.std(pred_close) > 0 and np.std(actual_close) > 0:
+            close_correlation = float(np.corrcoef(pred_close, actual_close)[0, 1])
 
         metrics = {
             "points": int(len(common_ts)),
-            "mae_close": float(np.mean(np.abs(errors))),
+            "coverage_pct": float(len(common_ts) / max(snapshot.pred_len, 1) * 100),
+            "mae_close": float(np.mean(abs_errors)),
             "rmse_close": float(np.sqrt(np.mean(errors**2))),
-            "mape_close": float(np.mean(np.abs(errors / np.maximum(actual_close, 1e-9))) * 100),
+            "mape_close": float(np.mean(abs_pct_errors)),
+            "max_abs_error_close": float(np.max(abs_errors)),
+            "max_abs_error_pct": float(np.max(abs_pct_errors)),
+            "last_abs_error_close": float(abs_errors[-1]),
+            "last_abs_error_pct": float(abs_pct_errors[-1]),
+            "bias_close": float(np.mean(errors)),
+            "pred_return_pct": float(pred_return_pct),
+            "actual_return_pct": float(actual_return_pct),
+            "return_error_pct": float(pred_return_pct - actual_return_pct),
+            "close_correlation": close_correlation,
             "direction_accuracy": float(
                 np.mean(np.sign(pred_close - prev_actual) == np.sign(actual_close - prev_actual)) * 100
             ),

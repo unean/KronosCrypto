@@ -20,6 +20,7 @@ button,
 input,
 select {
   font: inherit;
+  min-width: 0;
 }
 
 button {
@@ -62,19 +63,55 @@ input {
 }
 
 .app-shell {
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   display: grid;
-  grid-template-columns: 340px minmax(0, 1fr);
+  grid-template-columns: 372px minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .sidebar {
   border-right: 1px solid #30363d;
   background: #0b0f14;
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr);
+  height: 100vh;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.sidebar-rail {
+  border-right: 1px solid #30363d;
+  background: #0d1117;
+  padding: 14px 7px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.sidebar-rail button {
+  width: 34px;
+  min-height: 34px;
+  padding: 0;
+  border-radius: 6px;
+  color: #8b949e;
+}
+
+.sidebar-rail button.active {
+  color: #58a6ff;
+  border-color: #58a6ff;
+  background: #111820;
+}
+
+.sidebar-panel {
+  min-width: 0;
+  min-height: 0;
   padding: 18px;
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 14px;
-  min-height: 100vh;
+  overflow: hidden;
 }
 
 .brand {
@@ -104,22 +141,45 @@ label span,
   background: #111820;
   border-radius: 8px;
   padding: 14px;
+  min-width: 0;
 }
 
 .controls {
   display: grid;
   gap: 12px;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.panel.controls:not(.active),
+.panel.snapshots:not(.active) {
+  display: none;
+}
+
+.panel.controls.active {
+  display: grid;
+}
+
+.panel.snapshots.active {
+  display: flex;
+}
+
+.controls > * {
+  min-width: 0;
 }
 
 label {
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .split {
   display: grid;
-  grid-template-columns: 1fr 88px;
+  grid-template-columns: minmax(0, 1fr) 78px;
   gap: 10px;
+  min-width: 0;
 }
 
 .range-block {
@@ -129,6 +189,7 @@ label {
   display: grid;
   gap: 10px;
   background: #0d1117;
+  min-width: 0;
 }
 
 .range-title {
@@ -141,26 +202,115 @@ label {
 
 .shortcut-row {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
+  min-width: 0;
 }
 
 .shortcut-row button {
   min-height: 32px;
-  padding: 0 8px;
+  padding: 0 6px;
   font-size: 0.78rem;
+  white-space: nowrap;
 }
 
-.range-inputs {
+.range-picker {
+  position: relative;
+  min-width: 0;
+}
+
+.range-display {
+  width: 100%;
+  min-width: 0;
+  justify-content: space-between;
+  text-align: left;
+}
+
+.range-display span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.range-panel {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  background: #111820;
+  padding: 10px;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 38%);
 }
 
-.range-inputs input {
+.range-panel input {
   min-width: 0;
   font-size: 0.8rem;
   padding: 0 8px;
+}
+
+.calendar-head {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) 32px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.calendar-head strong {
+  text-align: center;
+  font-size: 0.86rem;
+}
+
+.calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.calendar-weekdays span {
+  color: #8b949e;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.calendar-day {
+  min-height: 30px;
+  padding: 0;
+  border-radius: 6px;
+  font-size: 0.78rem;
+}
+
+.calendar-day.is-range {
+  background: #1f2d3d;
+  border-color: #31506f;
+}
+
+.calendar-day.is-start,
+.calendar-day.is-end {
+  background: #238636;
+  border-color: #2ea043;
+  color: #ffffff;
+}
+
+.range-time-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  min-width: 0;
+  border-top: 1px solid #30363d;
+  padding-top: 10px;
+}
+
+.range-time-row input {
+  min-height: 32px;
+  font-size: 0.78rem;
+  padding: 0 6px;
 }
 
 .button-row {
@@ -184,14 +334,16 @@ label {
 
 .snapshots {
   min-height: 0;
-  flex: 1;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 .snapshot-list {
   display: grid;
   gap: 8px;
+  min-height: 0;
+  flex: 1;
   overflow: auto;
   padding-right: 2px;
 }
@@ -292,8 +444,11 @@ label {
 .workspace {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  min-height: 100vh;
+  grid-template-rows: auto auto auto auto;
+  align-content: start;
+  height: 100vh;
+  min-height: 0;
+  overflow: auto;
 }
 
 .topbar {
@@ -349,8 +504,7 @@ label {
 .chart-surface {
   position: relative;
   width: 100%;
-  height: calc(100vh - 128px);
-  min-height: 520px;
+  height: clamp(420px, 58vh, 620px);
   border: 1px solid #30363d;
   border-radius: 8px;
   overflow: hidden;

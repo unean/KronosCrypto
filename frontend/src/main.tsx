@@ -36,6 +36,7 @@ const RANGE_SHORTCUTS = [
   { label: "最近3天", days: 3 },
   { label: "最近7天", days: 7 },
 ];
+const WEEKDAYS = ["一", "二", "三", "四", "五", "六", "日"];
 
 function fmt(value: string) {
   return formatApiTime(value);
@@ -67,6 +68,55 @@ function localInputToIso(value: string) {
   return value ? new Date(value).toISOString() : undefined;
 }
 
+function datePart(value: string) {
+  return value ? value.slice(0, 10) : "";
+}
+
+function timePart(value: string) {
+  return value ? value.slice(11, 16) : "";
+}
+
+function localDateString(date: Date) {
+  return toDateTimeLocal(date).slice(0, 10);
+}
+
+function dateAtTime(date: string, time: string) {
+  return `${date}T${time}`;
+}
+
+function withTime(value: string, time: string, fallbackDate: string) {
+  return `${datePart(value) || fallbackDate}T${time}`;
+}
+
+function monthStartFromDate(value: string) {
+  const source = value ? new Date(`${datePart(value)}T00:00`) : new Date();
+  return new Date(source.getFullYear(), source.getMonth(), 1);
+}
+
+function calendarCells(month: Date) {
+  const first = new Date(month.getFullYear(), month.getMonth(), 1);
+  const startOffset = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
+  return [
+    ...Array.from({ length: startOffset }, () => null),
+    ...Array.from({ length: daysInMonth }, (_, index) => new Date(month.getFullYear(), month.getMonth(), index + 1)),
+  ];
+}
+
+function rangeText(start: string, end: string) {
+  if (!start && !end) return "最新行情";
+  const startText = start ? start.slice(5).replace("T", " ") : "未设置";
+  const endText = end ? end.slice(5).replace("T", " ") : "选择终止";
+  return `${startText} → ${endText}`;
+}
+
+function rangeTitle(start: string, end: string) {
+  if (!start && !end) return "最新行情";
+  const startText = start ? start.replace("T", " ") : "未设置";
+  const endText = end ? end.replace("T", " ") : "未设置";
+  return `${startText} → ${endText}`;
+}
+
 function defaultRange() {
   const end = new Date();
   const start = new Date(end.getTime() - 24 * 60 * 60 * 1000);
@@ -89,6 +139,9 @@ function App() {
   const [sampleCount, setSampleCount] = useState(8);
   const [rangeStart, setRangeStart] = useState(initialRange.current.start);
   const [rangeEnd, setRangeEnd] = useState(initialRange.current.end);
+  const [rangePickerOpen, setRangePickerOpen] = useState(false);
+  const [rangeAnchor, setRangeAnchor] = useState<string | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState(() => monthStartFromDate(initialRange.current.start));
   const [loadedRangeKey, setLoadedRangeKey] = useState<string | null>(null);
   const [refreshMs, setRefreshMs] = useState(0);
   const [history, setHistory] = useState<Candle[]>([]);
@@ -101,9 +154,11 @@ function App() {
   const [snapshotPage, setSnapshotPage] = useState(1);
   const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<number[]>([]);
   const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotDetail | null>(null);
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<"controls" | "snapshots">("controls");
   const [status, setStatus] = useState("空闲");
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<number | null>(null);
+  const rangePickerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     api.markets().then((data) => {
@@ -135,6 +190,31 @@ function App() {
     };
   }, [refreshMs, exchange, symbol, timeframe, lookback, predLen, sampleCount, modelKey, device]);
 
+  useEffect(() => {
+    if (!rangePickerOpen) return;
+
+    function closeOnOutsidePointer(event: PointerEvent) {
+      if (!rangePickerRef.current?.contains(event.target as Node)) {
+        setRangePickerOpen(false);
+        setRangeAnchor(null);
+      }
+    }
+
+    function closeOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setRangePickerOpen(false);
+        setRangeAnchor(null);
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [rangePickerOpen]);
+
   const chartActual = selectedSnapshot?.actual ?? actual;
   const chartHistory = selectedSnapshot?.history ?? history;
   const chartPrediction = selectedSnapshot?.prediction ?? prediction;
@@ -153,6 +233,8 @@ function App() {
   const pagedSnapshotIds = pagedSnapshots.map((snapshot) => snapshot.id);
   const selectedSnapshotIdSet = useMemo(() => new Set(selectedSnapshotIds), [selectedSnapshotIds]);
   const isPageSelected = pagedSnapshotIds.length > 0 && pagedSnapshotIds.every((id) => selectedSnapshotIdSet.has(id));
+  const calendarMonthLabel = `${calendarMonth.getFullYear()}年${calendarMonth.getMonth() + 1}月`;
+  const calendarDates = useMemo(() => calendarCells(calendarMonth), [calendarMonth]);
 
   useEffect(() => {
     setSnapshotPage((page) => Math.min(page, snapshotPageCount));
@@ -179,6 +261,36 @@ function App() {
       }
       return [...current];
     });
+  }
+
+  function moveCalendarMonth(delta: number) {
+    setCalendarMonth((month) => new Date(month.getFullYear(), month.getMonth() + delta, 1));
+  }
+
+  function selectCalendarDate(date: Date) {
+    const selected = localDateString(date);
+    if (!rangeAnchor || rangeEnd) {
+      setRangeAnchor(selected);
+      setRangeStart(dateAtTime(selected, timePart(rangeStart) || "00:00"));
+      setRangeEnd("");
+      return;
+    }
+
+    const start = selected < rangeAnchor ? selected : rangeAnchor;
+    const end = selected < rangeAnchor ? rangeAnchor : selected;
+    setRangeStart(dateAtTime(start, timePart(rangeStart) || "00:00"));
+    setRangeEnd(dateAtTime(end, timePart(rangeEnd) || "23:59"));
+    setRangeAnchor(null);
+    setRangePickerOpen(false);
+  }
+
+  function updateRangeStartTime(time: string) {
+    setRangeStart((value) => withTime(value, time, localDateString(new Date())));
+  }
+
+  function updateRangeEndTime(time: string) {
+    const fallbackDate = datePart(rangeStart) || localDateString(new Date());
+    setRangeEnd((value) => withTime(value, time, fallbackDate));
   }
 
   async function previewMarket() {
@@ -210,13 +322,18 @@ function App() {
     const start = new Date(end.getTime() - days * 24 * 60 * 60 * 1000);
     setRangeStart(toDateTimeLocal(start));
     setRangeEnd(toDateTimeLocal(end));
+    setRangeAnchor(null);
+    setCalendarMonth(monthStartFromDate(toDateTimeLocal(start)));
   }
 
   function shiftRangeByDays(days: number) {
     if (!rangeStart || !rangeEnd) return;
     const shiftMs = days * 24 * 60 * 60 * 1000;
-    setRangeStart(toDateTimeLocal(new Date(new Date(rangeStart).getTime() + shiftMs)));
+    const nextStart = toDateTimeLocal(new Date(new Date(rangeStart).getTime() + shiftMs));
+    setRangeStart(nextStart);
     setRangeEnd(toDateTimeLocal(new Date(new Date(rangeEnd).getTime() + shiftMs)));
+    setRangeAnchor(null);
+    setCalendarMonth(monthStartFromDate(nextStart));
   }
 
   async function runPrediction(showBusy = true) {
@@ -341,15 +458,35 @@ function App() {
   return (
     <main className="app-shell">
       <aside className="sidebar">
-        <div className="brand">
-          <BarChart3 size={24} />
-          <div>
-            <h1>Kronos Crypto</h1>
-            <span>模型预测控制台</span>
-          </div>
-        </div>
+        <nav className="sidebar-rail" aria-label="侧栏导航">
+          <button
+            type="button"
+            className={activeSidebarPanel === "controls" ? "active" : ""}
+            onClick={() => setActiveSidebarPanel("controls")}
+            title="预测参数"
+          >
+            <BarChart3 size={18} />
+          </button>
+          <button
+            type="button"
+            className={activeSidebarPanel === "snapshots" ? "active" : ""}
+            onClick={() => setActiveSidebarPanel("snapshots")}
+            title="快照"
+          >
+            <Save size={18} />
+          </button>
+        </nav>
 
-        <section className="panel controls">
+        <div className="sidebar-panel">
+          <div className="brand">
+            <BarChart3 size={24} />
+            <div>
+              <h1>Kronos Crypto</h1>
+              <span>模型预测控制台</span>
+            </div>
+          </div>
+
+        <section className={`panel controls${activeSidebarPanel === "controls" ? " active" : ""}`}>
           <label>
             <span>交易所</span>
             <select value={exchange} onChange={(event) => setExchange(event.target.value)}>
@@ -413,19 +550,65 @@ function App() {
               <button type="button" onClick={() => shiftRangeByDays(-1)} disabled={loading || !rangeStart || !rangeEnd}>
                 前一天
               </button>
-              <button type="button" onClick={() => { setRangeStart(""); setRangeEnd(""); }} disabled={loading || (!rangeStart && !rangeEnd)}>
+              <button type="button" onClick={() => { setRangeStart(""); setRangeEnd(""); setRangeAnchor(null); setRangePickerOpen(false); }} disabled={loading || (!rangeStart && !rangeEnd)}>
                 最新
               </button>
             </div>
-            <div className="range-inputs">
-              <label>
-                <span>开始</span>
-                <input type="datetime-local" value={rangeStart} onChange={(event) => setRangeStart(event.target.value)} />
-              </label>
-              <label>
-                <span>结束</span>
-                <input type="datetime-local" value={rangeEnd} onChange={(event) => setRangeEnd(event.target.value)} />
-              </label>
+            <div className="range-picker" ref={rangePickerRef}>
+              <button type="button" className="range-display" onClick={() => setRangePickerOpen((open) => !open)} disabled={loading} title={rangeTitle(rangeStart, rangeEnd)}>
+                <span>{rangeText(rangeStart, rangeEnd)}</span>
+                <CalendarDays size={15} />
+              </button>
+              {rangePickerOpen ? (
+                <div className="range-panel">
+                  <div className="calendar-head">
+                    <button type="button" className="icon-button" onClick={() => moveCalendarMonth(-1)} title="上个月">
+                      <ChevronLeft size={15} />
+                    </button>
+                    <strong>{calendarMonthLabel}</strong>
+                    <button type="button" className="icon-button" onClick={() => moveCalendarMonth(1)} title="下个月">
+                      <ChevronRight size={15} />
+                    </button>
+                  </div>
+                  <div className="calendar-grid calendar-weekdays">
+                    {WEEKDAYS.map((day) => (
+                      <span key={day}>{day}</span>
+                    ))}
+                  </div>
+                  <div className="calendar-grid">
+                    {calendarDates.map((date, index) => {
+                      const value = date ? localDateString(date) : "";
+                      const startDate = datePart(rangeStart);
+                      const endDate = datePart(rangeEnd);
+                      const isStart = Boolean(value && value === startDate);
+                      const isEnd = Boolean(value && value === endDate);
+                      const isInRange = Boolean(value && startDate && endDate && value > startDate && value < endDate);
+                      return date ? (
+                        <button
+                          key={value}
+                          type="button"
+                          className={`calendar-day${isStart ? " is-start" : ""}${isEnd ? " is-end" : ""}${isInRange ? " is-range" : ""}`}
+                          onClick={() => selectCalendarDate(date)}
+                        >
+                          {date.getDate()}
+                        </button>
+                      ) : (
+                        <span key={`blank-${index}`} />
+                      );
+                    })}
+                  </div>
+                  <div className="range-time-row">
+                    <label>
+                      <span>起始时分</span>
+                      <input type="time" value={timePart(rangeStart) || "00:00"} onChange={(event) => updateRangeStartTime(event.currentTarget.value)} onInput={(event) => updateRangeStartTime(event.currentTarget.value)} />
+                    </label>
+                    <label>
+                      <span>终止时分</span>
+                      <input type="time" value={timePart(rangeEnd) || "23:59"} onChange={(event) => updateRangeEndTime(event.currentTarget.value)} onInput={(event) => updateRangeEndTime(event.currentTarget.value)} />
+                    </label>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -472,7 +655,7 @@ function App() {
           </div>
         </section>
 
-        <section className="panel snapshots">
+        <section className={`panel snapshots${activeSidebarPanel === "snapshots" ? " active" : ""}`}>
           <div className="panel-title">
             <Save size={16} />
             <h2>快照</h2>
@@ -540,6 +723,7 @@ function App() {
             </button>
           </div>
         </section>
+        </div>
       </aside>
 
       <section className="workspace">

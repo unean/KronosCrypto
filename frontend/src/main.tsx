@@ -8,6 +8,7 @@ import {
   ChevronRight,
   Clock,
   Database,
+  PieChart,
   Play,
   RefreshCcw,
   Save,
@@ -18,6 +19,7 @@ import {
 
 import { api, type MarketsResponse, type PredictPayload } from "./api/client";
 import { CandleChart } from "./components/CandleChart";
+import { StatsPanel } from "./components/StatsPanel";
 import type { Candle, PredictionProbability, PredictResponse, SnapshotDetail, SnapshotSummary, Timeframe } from "./types/domain";
 import { formatApiTime } from "./utils/time";
 import "./styles.css";
@@ -154,7 +156,7 @@ function App() {
   const [snapshotPage, setSnapshotPage] = useState(1);
   const [selectedSnapshotIds, setSelectedSnapshotIds] = useState<number[]>([]);
   const [selectedSnapshot, setSelectedSnapshot] = useState<SnapshotDetail | null>(null);
-  const [activeSidebarPanel, setActiveSidebarPanel] = useState<"controls" | "snapshots">("controls");
+  const [activeSidebarPanel, setActiveSidebarPanel] = useState<"controls" | "snapshots" | "stats">("controls");
   const [status, setStatus] = useState("空闲");
   const [loading, setLoading] = useState(false);
   const timerRef = useRef<number | null>(null);
@@ -475,6 +477,14 @@ function App() {
           >
             <Save size={18} />
           </button>
+          <button
+            type="button"
+            className={activeSidebarPanel === "stats" ? "active" : ""}
+            onClick={() => setActiveSidebarPanel("stats")}
+            title="统计"
+          >
+            <PieChart size={18} />
+          </button>
         </nav>
 
         <div className="sidebar-panel">
@@ -744,6 +754,12 @@ function App() {
           </div>
         </header>
 
+        {activeSidebarPanel === "stats" ? (
+          <div className="stats-wrap">
+            <StatsPanel snapshots={snapshots} />
+          </div>
+        ) : (
+          <>
         <div className="chart-wrap">
           <CandleChart
             history={chartHistory}
@@ -814,6 +830,8 @@ function App() {
             ) : null}
           </section>
         ) : null}
+          </>
+        )}
       </section>
     </main>
   );

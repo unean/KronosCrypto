@@ -116,6 +116,16 @@ class SnapshotService:
         if len(common_ts) > 1 and np.std(pred_close) > 0 and np.std(actual_close) > 0:
             close_correlation = float(np.corrcoef(pred_close, actual_close)[0, 1])
 
+        # 波动率预测：论文中 Kronos 的强项维度。用同一方法分别计算预测序列与实际序列
+        # 在预测窗口内的步进收益标准差，公平对比“模型预测的这段有多颠”与“实际有多颠”。
+        pred_volatility_pct = 0.0
+        actual_volatility_pct = 0.0
+        if len(common_ts) > 1:
+            pred_returns = np.diff(pred_close) / np.maximum(pred_close[:-1], 1e-9)
+            actual_returns = np.diff(actual_close) / np.maximum(actual_close[:-1], 1e-9)
+            pred_volatility_pct = float(np.std(pred_returns) * 100)
+            actual_volatility_pct = float(np.std(actual_returns) * 100)
+
         metrics = {
             "points": int(len(common_ts)),
             "coverage_pct": float(len(common_ts) / max(snapshot.pred_len, 1) * 100),
@@ -131,6 +141,9 @@ class SnapshotService:
             "actual_return_pct": float(actual_return_pct),
             "return_error_pct": float(pred_return_pct - actual_return_pct),
             "close_correlation": close_correlation,
+            "pred_volatility_pct": pred_volatility_pct,
+            "actual_volatility_pct": actual_volatility_pct,
+            "volatility_error_pct": float(pred_volatility_pct - actual_volatility_pct),
             "direction_accuracy": float(
                 np.mean(np.sign(pred_close - prev_actual) == np.sign(actual_close - prev_actual)) * 100
             ),

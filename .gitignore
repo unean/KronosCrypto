@@ -36,3 +36,6 @@ dist/
 .cache/
 hf_cache/
 /models/
+
+# Backend evaluation report artifacts
+/backend/reports/
